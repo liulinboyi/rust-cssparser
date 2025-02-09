@@ -311,6 +311,11 @@ where
     }
 }
 
+fn is_valid_unicode_escape(s: &str) -> bool {
+    // Check if it is a valid Unicode escape sequence
+    s.len() == 4 && s.chars().all(|c| c.is_digit(16))
+}
+
 impl<W> fmt::Write for CssStringWriter<'_, W>
 where
     W: fmt::Write,
@@ -320,7 +325,36 @@ where
         for (i, b) in s.bytes().enumerate() {
             let escaped = match_byte! { b,
                 b'"' => Some("\\\""),
-                b'\\' => Some("\\\\"),
+                b'\\' => {
+                  // Handle backslash
+                  if i + 1 < s.len() {
+                    match s.as_bytes()[i + 1] {
+                      b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F' => {
+                        // If the character following the backslash is part of a Unicode escape sequence, preserve the entire sequence
+                        if i + 4 <= s.len() {
+                          let next_4_chars = &s[i + 1..i + 5];
+                          if is_valid_unicode_escape(next_4_chars) {
+                            // Preserve the entire Unicode escape sequence
+                            Some("\\")
+                          } else {
+                            // If it is not a valid Unicode escape sequence, escape the backslash itself
+                            Some("\\\\")
+                          }
+                        } else {
+                          // If there are fewer than 4 characters following, escape the backslash itself
+                          Some("\\\\")
+                        }
+                      }
+                      _ => {
+                        // If the character following the backslash is any other character, escape the backslash itself
+                        Some("\\\\")
+                      }
+                    }
+                  } else {
+                    // If the backslash is the last character, escape the backslash itself
+                    Some("\\\\")
+                  }
+                },
                 b'\0' => Some("\u{FFFD}"),
                 b'\x01'..=b'\x1F' | b'\x7F' => None,
                 _ => continue,
